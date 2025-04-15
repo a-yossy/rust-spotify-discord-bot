@@ -20,12 +20,12 @@ struct Cursors {
 }
 
 #[derive(Debug, Deserialize)]
-struct Artist {
-    id: String,
+pub struct Artist {
+    pub id: String,
 }
 
-pub async fn get_following_random_id(access_token: &str) -> Result<String> {
-    let mut artists_ids = Vec::new();
+pub async fn get_following(access_token: &str) -> Result<Vec<Artist>> {
+    let mut artists = Vec::new();
     let mut after = Some(String::new());
     let client = Client::new();
     while let Some(now_after) = after {
@@ -42,11 +42,8 @@ pub async fn get_following_random_id(access_token: &str) -> Result<String> {
             .artists
             .items
             .into_iter()
-            .for_each(|artist| artists_ids.push(artist.id));
+            .for_each(|artist| artists.push(artist));
     }
 
-    Ok(artists_ids
-        .choose(&mut rng())
-        .cloned()
-        .context("アーティストが見つかりません")?)
+    Ok(artists)
 }
