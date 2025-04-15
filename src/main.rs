@@ -40,10 +40,16 @@ impl EventHandler for Handler {
                     return;
                 }
             };
-            let artist_id = match artists.choose(&mut rng()) {
+            let artist_id = match { artists.choose(&mut rng()) } {
                 Some(artist) => &artist.id,
                 None => {
-                    eprintln!("アーティストが見つかりません");
+                    if let Err(why) = msg
+                        .channel_id
+                        .say(&ctx.http, "アーティストが見つかりません")
+                        .await
+                    {
+                        println!("Error sending message: {why:?}");
+                    }
                     return;
                 }
             };
@@ -56,10 +62,14 @@ impl EventHandler for Handler {
                     return;
                 }
             };
-            let track_url = match tracks.choose(&mut rng()) {
+            let track_url = match { tracks.choose(&mut rng()) } {
                 Some(track) => &track.external_urls.spotify,
                 None => {
-                    eprintln!("曲が見つかりません");
+                    if let Err(why) = msg.channel_id.say(&ctx.http, "曲が見つかりません").await
+                    {
+                        println!("Error sending message: {why:?}");
+                    }
+
                     return;
                 }
             };
