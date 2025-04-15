@@ -6,7 +6,7 @@ use reqwest::Client;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
-struct SpotifyTokenResponse {
+struct TokenResponse {
     access_token: String,
 }
 
@@ -28,7 +28,7 @@ pub async fn post() -> Result<String> {
         .form(&params)
         .send()
         .await?
-        .json::<SpotifyTokenResponse>()
+        .json::<TokenResponse>()
         .await?
         .access_token)
 }

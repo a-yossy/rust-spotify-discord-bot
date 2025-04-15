@@ -3,7 +3,7 @@ use reqwest::Client;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
-struct TracksResponse {
+struct TopTracksResponse {
     tracks: Vec<Track>,
 }
 
@@ -28,7 +28,7 @@ pub async fn get(artist_id: &str, access_token: &str) -> Result<Vec<Track>> {
         .bearer_auth(access_token)
         .send()
         .await?
-        .json::<TracksResponse>()
+        .json::<TopTracksResponse>()
         .await?;
     response
         .tracks
