@@ -2,6 +2,9 @@ use std::env;
 
 use rand::rng;
 use rand::seq::IndexedRandom;
+use rig::completion::Prompt;
+use rig::providers::gemini;
+use rig::providers::gemini::completion::GEMINI_2_0_FLASH;
 use serenity::async_trait;
 use serenity::model::channel::Message;
 use serenity::prelude::*;
@@ -21,9 +24,7 @@ impl EventHandler for Handler {
             if let Err(why) = msg.channel_id.say(&ctx.http, "Pong!").await {
                 println!("Error sending message: {why:?}");
             }
-        }
-
-        if msg_content == "spotify" {
+        } else if msg_content == "spotify" {
             let access_token = match spotify::api::token::post().await {
                 Ok(token) => token,
                 Err(e) => {
@@ -64,6 +65,17 @@ impl EventHandler for Handler {
             };
 
             if let Err(why) = msg.channel_id.say(&ctx.http, track_url).await {
+                println!("Error sending message: {why:?}");
+            }
+        } else {
+            let client = gemini::Client::from_env();
+            let gemini = client.agent(GEMINI_2_0_FLASH).build();
+            let response = gemini
+                .prompt(msg_content)
+                .await
+                .expect("プロンプトの読み込みに失敗しました");
+
+            if let Err(why) = msg.channel_id.say(&ctx.http, &response).await {
                 println!("Error sending message: {why:?}");
             }
         }
