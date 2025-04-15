@@ -1,5 +1,4 @@
-use anyhow::{Context, Result};
-use rand::{rng, seq::IndexedRandom};
+use anyhow::Result;
 use reqwest::Client;
 use serde::Deserialize;
 
@@ -24,7 +23,7 @@ pub struct Artist {
     pub id: String,
 }
 
-pub async fn get_following(access_token: &str) -> Result<Vec<Artist>> {
+pub async fn get(access_token: &str) -> Result<Vec<Artist>> {
     let mut artists = Vec::new();
     let mut after = Some(String::new());
     let client = Client::new();

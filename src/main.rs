@@ -1,58 +1,98 @@
-use base64::prelude::*;
-use reqwest::Client;
-use serde::Deserialize;
 use std::env;
 
-#[derive(Deserialize)]
-struct SpotifyTokenResponse {
-    access_token: String,
+use rand::rng;
+use rand::seq::IndexedRandom;
+use serenity::async_trait;
+use serenity::model::channel::Message;
+use serenity::prelude::*;
+use ss_discord_bot::client::spotify;
+
+struct Handler;
+
+#[async_trait]
+impl EventHandler for Handler {
+    async fn message(&self, ctx: Context, msg: Message) {
+        if !msg.mentions_me(&ctx.http).await.unwrap_or(false) {
+            return;
+        }
+
+        let msg_content = strip_mentions_msg_content(&msg);
+        if msg_content == "!ping" {
+            if let Err(why) = msg.channel_id.say(&ctx.http, "Pong!").await {
+                println!("Error sending message: {why:?}");
+            }
+        }
+
+        if msg_content == "spotify" {
+            let access_token = match spotify::api::token::post().await {
+                Ok(token) => token,
+                Err(e) => {
+                    eprintln!("{:?}", e);
+                    return;
+                }
+            };
+
+            let artists = match spotify::v1::me::following::get(&access_token).await {
+                Ok(artists) => artists,
+                Err(e) => {
+                    eprintln!("{:?}", e);
+                    return;
+                }
+            };
+            let artist_id = match artists.choose(&mut rng()) {
+                Some(artist) => &artist.id,
+                None => {
+                    eprintln!("アーティストが見つかりません");
+                    return;
+                }
+            };
+
+            let tracks = match spotify::v1::artists::top_tracks::get(artist_id, &access_token).await
+            {
+                Ok(tracks) => tracks,
+                Err(e) => {
+                    eprintln!("{:?}", e);
+                    return;
+                }
+            };
+            let track_url = match tracks.choose(&mut rng()) {
+                Some(track) => &track.external_urls.spotify,
+                None => {
+                    eprintln!("曲が見つかりません");
+                    return;
+                }
+            };
+
+            if let Err(why) = msg.channel_id.say(&ctx.http, track_url).await {
+                println!("Error sending message: {why:?}");
+            }
+        }
+    }
 }
 
-// fn generate_random_string(len: usize) -> String {
-//     rand::rng()
-//         .sample_iter(rand::distr::Alphanumeric)
-//         .take(len)
-//         .map(char::from)
-//         .collect()
-// }
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    dotenvy::dotenv().ok();
-
-    let refresh_token = env::var("SPOTIFY_REFRESH_TOKEN")?;
-    let client = Client::new();
-    let url = "https://accounts.spotify.com/api/token";
-    let params = [
-        ("grant_type", "refresh_token"),
-        ("refresh_token", &refresh_token),
-    ];
-    let client_id = env::var("SPOTIFY_CLIENT_ID").unwrap();
-    let client_secret = env::var("SPOTIFY_CLIENT_SECRET").unwrap();
-    let authorization = BASE64_STANDARD.encode(format!("{}:{}", client_id, client_secret));
-    let response = client
-        .post(url)
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .header("Authorization", format!("Basic {}", authorization))
-        .form(&params)
-        .send()
-        .await?
-        .json::<SpotifyTokenResponse>()
-        .await?;
-    let access_token = response.access_token;
-
-    let response = client
-        .get("https://api.spotify.com/v1/me/player/recently-played")
-        .query(&[("limit", 10)])
-        .bearer_auth(access_token)
-        .send()
-        .await?;
-
-    if response.status().is_success() {
-        println!("{}", response.text().await?);
-    } else {
-        eprintln!("Error: {}", response.status());
+fn strip_mentions_msg_content(msg: &Message) -> String {
+    let mut content = msg.content.clone();
+    for user in &msg.mentions {
+        let user_id = format!("<@{}>", user.id);
+        content = content.replace(&user_id, "");
     }
 
-    Ok(())
+    content.trim().to_string()
+}
+
+#[tokio::main]
+async fn main() {
+    dotenvy::dotenv().ok();
+
+    let token = env::var("DISCORD_TOKEN").expect("DISCORD_TOKENの取得でエラーが発生しました");
+    let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
+
+    let mut client = Client::builder(&token, intents)
+        .event_handler(Handler)
+        .await
+        .expect("Discordクライアントの作成でエラーが発生しました");
+
+    if let Err(why) = client.start().await {
+        println!("Client error: {why:?}");
+    }
 }

@@ -10,7 +10,7 @@ struct SpotifyTokenResponse {
     access_token: String,
 }
 
-pub async fn get() -> Result<String> {
+pub async fn post() -> Result<String> {
     let refresh_token = env::var("SPOTIFY_REFRESH_TOKEN")?;
     let params = [
         ("grant_type", "refresh_token"),
