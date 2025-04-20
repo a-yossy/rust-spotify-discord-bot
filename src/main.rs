@@ -5,6 +5,11 @@ use rand::seq::IndexedRandom;
 use rig::completion::Prompt;
 use rig::providers::gemini;
 use rig::providers::gemini::completion::GEMINI_2_0_FLASH;
+use rig::tool::Tool as RigTool;
+use rmcp::model::{CallToolRequestParam, CallToolResult, Tool as McpTool};
+use rmcp::service::ServerSink;
+use rmcp::{Error, ServiceExt};
+use serde::{Deserialize, Serialize};
 use serenity::async_trait;
 use serenity::model::channel::Message;
 use serenity::prelude::*;
@@ -78,8 +83,87 @@ impl EventHandler for Handler {
                 println!("Error sending message: {why:?}");
             }
         } else {
+            #[derive(Debug, Deserialize)]
+            struct McpConfig {
+                name: String,
+                protocol: String,
+                command: String,
+                args: Vec<String>,
+            }
+
+            #[derive(Debug, Deserialize)]
+            struct Config {
+                mcp: McpConfig,
+            }
+
+            let content = tokio::fs::read_to_string("config.toml").await.unwrap();
+            let config: Config = toml::from_str(&content).unwrap();
+            let transport = rmcp::transport::TokioChildProcess::new(
+                tokio::process::Command::new(config.mcp.command).args(config.mcp.args),
+            )
+            .unwrap();
+            let mcp_manager = ().serve(transport).await.unwrap();
+            struct McpToolAdaptor {
+                tool: McpTool,
+                server: ServerSink,
+            }
+            #[derive(serde::Deserialize, Serialize)]
+            struct SearchArgs {
+                genre: String,
+            }
+
+            impl RigTool for McpToolAdaptor {
+                const NAME: &'static str = "spotify";
+
+                type Error = Error;
+                type Args = SearchArgs;
+                type Output = CallToolResult;
+                fn name(&self) -> String {
+                    self.tool.name.to_string()
+                }
+
+                async fn definition(&self, _prompt: String) -> rig::completion::ToolDefinition {
+                    rig::completion::ToolDefinition {
+                        name: self.name(),
+                        description: "ジャンルに基づいて音楽を探します".to_string(),
+                        parameters: self.tool.schema_as_json_value(),
+                    }
+                }
+                async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+                    let server = self.server.clone();
+                    println!(
+                        "{:?}",
+                        serde_json::to_value(&args)
+                            .unwrap()
+                            .as_object()
+                            .cloned()
+                            .unwrap()
+                    );
+                    let call_mcp_tool_result = server
+                        .call_tool(CallToolRequestParam {
+                            name: self.tool.name.clone(),
+                            arguments: Some(
+                                serde_json::to_value(&args)
+                                    .unwrap()
+                                    .as_object()
+                                    .cloned()
+                                    .unwrap(),
+                            ),
+                        })
+                        .await
+                        .unwrap();
+
+                    Ok(call_mcp_tool_result)
+                }
+            }
+
+            let adaptor = McpToolAdaptor {
+                tool: mcp_manager.list_all_tools().await.unwrap()[0].clone(),
+                server: mcp_manager.peer().clone(),
+            };
+
             let client = gemini::Client::from_env();
-            let gemini = client.agent(GEMINI_2_0_FLASH).build();
+            let gemini = client.agent(GEMINI_2_0_FLASH).tool(adaptor).build();
             let response = gemini
                 .prompt(msg_content)
                 .await
