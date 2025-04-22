@@ -1046,23 +1046,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
 
 [[package]]
-name = "mcp-core"
-version = "0.1.43"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61c5a36e314b7ef4dd16d712295248071b1768bab6e875acb7d360f63ca4a86f"
-dependencies = [
- "anyhow",
- "async-trait",
- "futures",
- "libc",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "url",
-]
-
-[[package]]
 name = "memchr"
 version = "2.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1493,7 +1476,6 @@ dependencies = [
  "bytes",
  "futures",
  "glob",
- "mcp-core",
  "mime_guess",
  "ordered-float",
  "reqwest 0.12.15",
@@ -1963,6 +1945,7 @@ dependencies = [
  "reqwest 0.12.15",
  "rig-core",
  "rmcp",
+ "schemars",
  "serde",
  "serde_json",
  "serenity",
