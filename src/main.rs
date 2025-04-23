@@ -1,26 +1,28 @@
 use once_cell::sync::Lazy;
 use rig::OneOrMany;
 use rig::message::{AssistantContent, Message, Text, UserContent};
+use serenity::all::EditMessage;
 use std::collections::HashMap;
 use std::env;
 use tokio::sync::Mutex;
 
+use futures::StreamExt; // トレイトをスコープに入れる
 use rand::rng;
 use rand::seq::IndexedRandom;
-use rig::completion::{Chat, Prompt};
 use rig::embeddings::EmbeddingsBuilder;
 use rig::providers::gemini::completion::GEMINI_2_0_FLASH;
 use rig::providers::{cohere, gemini};
+use rig::streaming::StreamingChat;
 use rig::tool::{ToolDyn as RigTool, ToolEmbeddingDyn, ToolSet};
 use rig::vector_store::in_memory_store::InMemoryVectorStore;
+use rmcp::ServiceExt;
 use rmcp::model::{CallToolRequestParam, CallToolResult, Tool as McpTool};
 use rmcp::service::ServerSink;
-use rmcp::{Error, ServiceExt};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serenity::async_trait;
 use serenity::model::channel::Message as SerenityMessage;
 use serenity::prelude::*;
-use ss_discord_bot::client::spotify;
+use ss_discord_bot::client::spotify; // 追加
 
 pub fn convert_mcp_call_tool_result_to_string(result: CallToolResult) -> String {
     serde_json::to_string(&result).unwrap()
@@ -35,7 +37,7 @@ struct Handler;
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: SerenityMessage) {
-        if (!msg.mentions_me(&ctx.http).await.unwrap_or(false)) {
+        if !msg.mentions_me(&ctx.http).await.unwrap_or(false) {
             return;
         }
 
@@ -44,11 +46,11 @@ impl EventHandler for Handler {
         let mut conversations = CONVERSATIONS.lock().await;
         let history = conversations.entry(0).or_insert_with(Vec::new);
 
-        if (msg_content == "!ping") {
+        if msg_content == "!ping" {
             if let Err(why) = msg.channel_id.say(&ctx.http, "Pong!").await {
                 println!("Error sending message: {why:?}");
             }
-        } else if (msg_content == "spotify") {
+        } else if msg_content == "spotify" {
             let access_token = match spotify::api::token::post().await {
                 Ok(token) => token,
                 Err(e) => {
@@ -212,39 +214,72 @@ impl EventHandler for Handler {
                 .agent(GEMINI_2_0_FLASH)
                 .preamble(
                     "あなたは音楽検索エージェントです。
-                    次のことを考慮してください。
-                        ユーザーの質問に対して、MCP サーバーを元に取得したデータをそのまま表示することを禁止します。人間がわかりやすい形に整形して表示してください。
-                        ユーザーへ回答を行うのに必要な処理が全て完了した後にまとめて応答してください。
-                        音楽の検索は進捗管理の現在の値を元に行ってください。
-                        ユーザーから始めてメッセージを受け取った際にはあなたが検索できる音楽ジャンルの一覧を取得して表示してください。
-                    "
+                    次のことを考慮してください:
+                ",
                 )
                 .dynamic_tools(10, index, tools)
                 .build();
 
-            let response = gemini
-                .chat(msg_content.clone(), history.to_vec())
+            // ストリーミング応答に変更
+            let mut response_stream = gemini
+                .stream_chat(&msg_content, history.to_vec())
                 .await
                 .expect("プロンプトの読み込みに失敗しました");
             let user_contest = UserContent::Text(Text {
                 text: msg_content.clone(),
             });
-            let assistant_content = AssistantContent::Text(Text {
-                text: response.clone(),
-            });
             let user_message = Message::User {
                 content: OneOrMany::one(user_contest),
             };
+            history.push(user_message);
+
+            // Discordにストリーミングで送信
+            let mut assistant_text = String::new();
+            let mut sent_message: Option<serenity::model::channel::Message> = None;
+            while let Some(chunk) = response_stream.next().await {
+                // StreamExtトレイトのnextメソッドを直接使用
+                match chunk {
+                    Ok(rig::streaming::StreamingChoice::Message(text)) => {
+                        assistant_text.push_str(&text);
+                        // 1回目は新規送信、それ以降は編集
+                        if let Some(ref mut msg_obj) = sent_message {
+                            let builder = EditMessage::new().content(&assistant_text);
+                            let _ = msg_obj.edit(&ctx.http, builder).await;
+                        } else {
+                            match msg.channel_id.say(&ctx.http, &assistant_text).await {
+                                Ok(m) => sent_message = Some(m),
+                                Err(e) => {
+                                    println!("Error sending message: {e:?}");
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    Ok(rig::streaming::StreamingChoice::ToolCall(name, _, param)) => {
+                        // ツールコールの通知（必要なら）
+                        let _ = msg
+                            .channel_id
+                            .say(&ctx.http, format!("[ツール呼び出し: {name}({param})]"))
+                            .await;
+                    }
+                    Err(e) => {
+                        let _ = msg
+                            .channel_id
+                            .say(&ctx.http, format!("[エラー: {e}]"))
+                            .await;
+                        break;
+                    }
+                }
+            }
+            // assistant_textを履歴に追加
+            let assistant_content = AssistantContent::Text(Text {
+                text: assistant_text.clone(),
+            });
             let assistant_message = Message::Assistant {
                 content: OneOrMany::one(assistant_content),
             };
-            history.push(user_message);
             history.push(assistant_message);
             println!("{:?}", history);
-
-            if let Err(why) = msg.channel_id.say(&ctx.http, &response).await {
-                println!("Error sending message: {why:?}");
-            }
         }
     }
 }
