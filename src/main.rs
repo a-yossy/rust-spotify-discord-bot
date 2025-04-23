@@ -1,17 +1,15 @@
 use once_cell::sync::Lazy;
 use rig::OneOrMany;
 use rig::message::{AssistantContent, Message, Text, UserContent};
+use rig::providers::anthropic::CLAUDE_3_7_SONNET;
 use serenity::all::EditMessage;
 use std::collections::HashMap;
 use std::env;
 use tokio::sync::Mutex;
 
 use futures::StreamExt; // トレイトをスコープに入れる
-use rand::rng;
-use rand::seq::IndexedRandom;
 use rig::embeddings::EmbeddingsBuilder;
-use rig::providers::gemini::completion::GEMINI_2_0_FLASH;
-use rig::providers::{cohere, gemini};
+use rig::providers::{anthropic, cohere};
 use rig::streaming::StreamingChat;
 use rig::tool::{ToolDyn as RigTool, ToolEmbeddingDyn, ToolSet};
 use rig::vector_store::in_memory_store::InMemoryVectorStore;
@@ -22,7 +20,8 @@ use serde::Deserialize;
 use serenity::async_trait;
 use serenity::model::channel::Message as SerenityMessage;
 use serenity::prelude::*;
-use ss_discord_bot::client::spotify; // 追加
+
+// 不要なimportを削除
 
 pub fn convert_mcp_call_tool_result_to_string(result: CallToolResult) -> String {
     serde_json::to_string(&result).unwrap()
@@ -51,58 +50,58 @@ impl EventHandler for Handler {
                 println!("Error sending message: {why:?}");
             }
         } else if msg_content == "spotify" {
-            let access_token = match spotify::api::token::post().await {
-                Ok(token) => token,
-                Err(e) => {
-                    eprintln!("{:?}", e);
-                    return;
-                }
-            };
+            // let access_token = match spotify::api::token::post().await {
+            //     Ok(token) => token,
+            //     Err(e) => {
+            //         eprintln!("{:?}", e);
+            //         return;
+            //     }
+            // };
 
-            let artists = match spotify::v1::me::following::get(&access_token).await {
-                Ok(artists) => artists,
-                Err(e) => {
-                    eprintln!("{:?}", e);
-                    return;
-                }
-            };
-            let artist_id = match { artists.choose(&mut rng()) } {
-                Some(artist) => &artist.id,
-                None => {
-                    if let Err(why) = msg
-                        .channel_id
-                        .say(&ctx.http, "アーティストが見つかりません")
-                        .await
-                    {
-                        println!("Error sending message: {why:?}");
-                    }
-                    return;
-                }
-            };
+            // let artists = match spotify::v1::me::following::get(&access_token).await {
+            //     Ok(artists) => artists,
+            //     Err(e) => {
+            //         eprintln!("{:?}", e);
+            //         return;
+            //     }
+            // };
+            // let artist_id = match { artists.choose(&mut thread_rng()) } {
+            //     Some(artist) => &artist.id,
+            //     None => {
+            //         if let Err(why) = msg
+            //             .channel_id
+            //             .say(&ctx.http, "アーティストが見つかりません")
+            //             .await
+            //         {
+            //             println!("Error sending message: {why:?}");
+            //         }
+            //         return;
+            //     }
+            // };
 
-            let tracks = match spotify::v1::artists::top_tracks::get(artist_id, &access_token).await
-            {
-                Ok(tracks) => tracks,
-                Err(e) => {
-                    eprintln!("{:?}", e);
-                    return;
-                }
-            };
-            let track_url = match { tracks.choose(&mut rng()) } {
-                Some(track) => &track.external_urls.spotify,
-                None => {
-                    if let Err(why) = msg.channel_id.say(&ctx.http, "曲が見つかりません").await
-                    {
-                        println!("Error sending message: {why:?}");
-                    }
+            // let tracks = match spotify::v1::artists::top_tracks::get(artist_id, &access_token).await
+            // {
+            //     Ok(tracks) => tracks,
+            //     Err(e) => {
+            //         eprintln!("{:?}", e);
+            //         return;
+            //     }
+            // };
+            // let track_url = match { tracks.choose(&mut thread_rng()) } {
+            //     Some(track) => &track.external_urls.spotify,
+            //     None => {
+            //         if let Err(why) = msg.channel_id.say(&ctx.http, "曲が見つかりません").await
+            //         {
+            //             println!("Error sending message: {why:?}");
+            //         }
 
-                    return;
-                }
-            };
+            //         return;
+            //     }
+            // };
 
-            if let Err(why) = msg.channel_id.say(&ctx.http, track_url).await {
-                println!("Error sending message: {why:?}");
-            }
+            // if let Err(why) = msg.channel_id.say(&ctx.http, track_url).await {
+            //     println!("Error sending message: {why:?}");
+            // }
         } else {
             #[derive(Debug, Deserialize)]
             struct McpConfig {
@@ -195,7 +194,7 @@ impl EventHandler for Handler {
             }
             let tools = tool_builder.build();
 
-            let client = gemini::Client::from_env();
+            let client = anthropic::Client::from_env();
             // let embedding_model = client.embedding_model(GEMINI_2_0_FLASH);
             let cohere_client = cohere::Client::from_env();
             let embedding_model =
@@ -210,18 +209,22 @@ impl EventHandler for Handler {
             let store =
                 InMemoryVectorStore::from_documents_with_id_f(embeddings, |f| f.name.clone());
             let index = store.index(embedding_model);
-            let gemini = client
-                .agent(GEMINI_2_0_FLASH)
+            let claude = client
+                .agent(CLAUDE_3_7_SONNET)
+                .max_tokens(25000)
                 .preamble(
                     "あなたは音楽検索エージェントです。
                     次のことを考慮してください:
+                        1. 会話の履歴に基づいて応答してください。
+                        2. ユーザーの質問に答えるために、ツールを使用してください。
+                        4. ツールから取得してきた情報を表示して会話を終えることを禁止します、ユーザーに次のアクションを促してください。
                 ",
                 )
-                .dynamic_tools(10, index, tools)
+                .dynamic_tools(20, index, tools)
                 .build();
 
             // ストリーミング応答に変更
-            let mut response_stream = gemini
+            let mut response_stream = claude
                 .stream_chat(&msg_content, history.to_vec())
                 .await
                 .expect("プロンプトの読み込みに失敗しました");
@@ -256,11 +259,34 @@ impl EventHandler for Handler {
                         }
                     }
                     Ok(rig::streaming::StreamingChoice::ToolCall(name, _, param)) => {
-                        // ツールコールの通知（必要なら）
+                        // ツールコールの通知をより視覚的にわかりやすく改善
                         let _ = msg
                             .channel_id
-                            .say(&ctx.http, format!("[ツール呼び出し: {name}({param})]"))
+                            .say(
+                                &ctx.http,
+                                format!(
+                                    "🛠️ **ツール呼び出し**: `{}` \n```json\n{}\n```",
+                                    name, param
+                                ),
+                            )
                             .await;
+
+                        // ツール結果も表示する
+                        if let Ok(tool_result) = claude.tools.call(&name, param.to_string()).await {
+                            let _ = msg
+                                .channel_id
+                                .say(
+                                    &ctx.http,
+                                    format!("🔍 **ツール結果**:\n```json\n{}\n```", tool_result),
+                                )
+                                .await;
+
+                            // 後続の応答にツール結果を含める
+                            assistant_text.push_str(&format!(
+                                "\n\n【ツール `{}` の結果】\n{}",
+                                name, tool_result
+                            ));
+                        }
                     }
                     Err(e) => {
                         let _ = msg
