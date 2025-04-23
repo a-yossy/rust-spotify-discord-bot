@@ -1941,6 +1941,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "dotenvy",
+ "once_cell",
  "rand 0.9.0",
  "reqwest 0.12.15",
  "rig-core",

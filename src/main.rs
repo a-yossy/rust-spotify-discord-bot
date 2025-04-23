@@ -1,8 +1,13 @@
+use once_cell::sync::Lazy;
+use rig::OneOrMany;
+use rig::message::{AssistantContent, Message, Text, UserContent};
+use std::collections::HashMap;
 use std::env;
+use tokio::sync::Mutex;
 
 use rand::rng;
 use rand::seq::IndexedRandom;
-use rig::completion::Prompt;
+use rig::completion::{Chat, Prompt};
 use rig::embeddings::EmbeddingsBuilder;
 use rig::providers::gemini::completion::GEMINI_2_0_FLASH;
 use rig::providers::{cohere, gemini};
@@ -13,7 +18,7 @@ use rmcp::service::ServerSink;
 use rmcp::{Error, ServiceExt};
 use serde::{Deserialize, Serialize};
 use serenity::async_trait;
-use serenity::model::channel::Message;
+use serenity::model::channel::Message as SerenityMessage;
 use serenity::prelude::*;
 use ss_discord_bot::client::spotify;
 
@@ -21,16 +26,24 @@ pub fn convert_mcp_call_tool_result_to_string(result: CallToolResult) -> String 
     serde_json::to_string(&result).unwrap()
 }
 
+// グローバルな会話履歴（ユーザーIDごと）
+static CONVERSATIONS: Lazy<Mutex<HashMap<u64, Vec<Message>>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
 struct Handler;
 
 #[async_trait]
 impl EventHandler for Handler {
-    async fn message(&self, ctx: Context, msg: Message) {
+    async fn message(&self, ctx: Context, msg: SerenityMessage) {
         if (!msg.mentions_me(&ctx.http).await.unwrap_or(false)) {
             return;
         }
 
         let msg_content = strip_mentions_msg_content(&msg);
+
+        let mut conversations = CONVERSATIONS.lock().await;
+        let history = conversations.entry(0).or_insert_with(Vec::new);
+
         if (msg_content == "!ping") {
             if let Err(why) = msg.channel_id.say(&ctx.http, "Pong!").await {
                 println!("Error sending message: {why:?}");
@@ -197,12 +210,37 @@ impl EventHandler for Handler {
             let index = store.index(embedding_model);
             let gemini = client
                 .agent(GEMINI_2_0_FLASH)
-                .dynamic_tools(100, index, tools)
+                .preamble(
+                    "あなたは音楽検索エージェントです。
+                    次のことを考慮してください。
+                        ユーザーの質問に対して、MCP サーバーを元に取得したデータをそのまま表示することを禁止します。人間がわかりやすい形に整形して表示してください。
+                        ユーザーへ回答を行うのに必要な処理が全て完了した後にまとめて応答してください。
+                        音楽の検索は進捗管理の現在の値を元に行ってください。
+                        ユーザーから始めてメッセージを受け取った際にはあなたが検索できる音楽ジャンルの一覧を取得して表示してください。
+                    "
+                )
+                .dynamic_tools(10, index, tools)
                 .build();
+
             let response = gemini
-                .prompt(msg_content)
+                .chat(msg_content.clone(), history.to_vec())
                 .await
                 .expect("プロンプトの読み込みに失敗しました");
+            let user_contest = UserContent::Text(Text {
+                text: msg_content.clone(),
+            });
+            let assistant_content = AssistantContent::Text(Text {
+                text: response.clone(),
+            });
+            let user_message = Message::User {
+                content: OneOrMany::one(user_contest),
+            };
+            let assistant_message = Message::Assistant {
+                content: OneOrMany::one(assistant_content),
+            };
+            history.push(user_message);
+            history.push(assistant_message);
+            println!("{:?}", history);
 
             if let Err(why) = msg.channel_id.say(&ctx.http, &response).await {
                 println!("Error sending message: {why:?}");
@@ -211,7 +249,7 @@ impl EventHandler for Handler {
     }
 }
 
-fn strip_mentions_msg_content(msg: &Message) -> String {
+fn strip_mentions_msg_content(msg: &SerenityMessage) -> String {
     let mut content = msg.content.clone();
     for user in &msg.mentions {
         let user_id = format!("<@{}>", user.id);
