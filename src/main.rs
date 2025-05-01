@@ -1,14 +1,13 @@
 use once_cell::sync::Lazy;
 use rand::rng;
 use rand::seq::IndexedRandom;
-use rig::providers::gemini::completion::GEMINI_2_0_FLASH;
 use rig::OneOrMany;
 use rig::message::{AssistantContent, Message, Text, UserContent};
-use rig::providers::anthropic::CLAUDE_3_7_SONNET;
+use rig::providers::gemini::completion::GEMINI_2_0_FLASH;
 use serenity::all::EditMessage;
 use ss_discord_bot::client::spotify;
+use ss_discord_bot::infrastructure::discord;
 use std::collections::HashMap;
-use std::env;
 use tokio::sync::Mutex;
 
 use futures::StreamExt;
@@ -317,14 +316,7 @@ fn strip_mentions_msg_content(msg: &SerenityMessage) -> String {
 async fn main() {
     dotenvy::dotenv().ok();
 
-    let token = env::var("DISCORD_TOKEN").expect("DISCORD_TOKENの取得でエラーが発生しました");
-    let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
-
-    let mut client = Client::builder(&token, intents)
-        .event_handler(Handler)
-        .await
-        .expect("Discordクライアントの作成でエラーが発生しました");
-
+    let mut client = discord::get_client(Handler).await;
     if let Err(why) = client.start().await {
         println!("Client error: {why:?}");
     }
