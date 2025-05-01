@@ -37,7 +37,7 @@ pub async fn handle(ctx: Context<'_>, prompt: String) -> Result<(), Error> {
                 assistant_text.push_str(&text);
                 if let Some(ref mut msg_obj) = sent_message {
                     let builder = CreateReply::default().content(&assistant_text);
-                    let _ = ReplyHandle::edit(msg_obj, ctx, builder).await;
+                    ReplyHandle::edit(msg_obj, ctx, builder).await?;
                 } else {
                     let reply_handle = ctx.say(&assistant_text).await?;
                     sent_message = Some(reply_handle);
