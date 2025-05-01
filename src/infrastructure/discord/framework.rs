@@ -1,13 +1,13 @@
 use poise::Framework;
 
 use crate::{
-    discord::commands::ping,
+    discord::commands::Commands,
     types::discord::framework::{Data, Error},
 };
 
 pub fn get() -> Framework<Data, Error> {
     let options = poise::FrameworkOptions {
-        commands: vec![ping::ping()],
+        commands: vec![Commands::ping(), Commands::random_music()],
         ..Default::default()
     };
 
