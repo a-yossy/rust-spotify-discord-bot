@@ -1,13 +1,17 @@
 use once_cell::sync::Lazy;
+use rand::rng;
+use rand::seq::IndexedRandom;
+use rig::providers::gemini::completion::GEMINI_2_0_FLASH;
 use rig::OneOrMany;
 use rig::message::{AssistantContent, Message, Text, UserContent};
 use rig::providers::anthropic::CLAUDE_3_7_SONNET;
 use serenity::all::EditMessage;
+use ss_discord_bot::client::spotify;
 use std::collections::HashMap;
 use std::env;
 use tokio::sync::Mutex;
 
-use futures::StreamExt; // トレイトをスコープに入れる
+use futures::StreamExt;
 use rig::embeddings::EmbeddingsBuilder;
 use rig::providers::{anthropic, cohere};
 use rig::streaming::StreamingChat;
@@ -21,13 +25,10 @@ use serenity::async_trait;
 use serenity::model::channel::Message as SerenityMessage;
 use serenity::prelude::*;
 
-// 不要なimportを削除
-
 pub fn convert_mcp_call_tool_result_to_string(result: CallToolResult) -> String {
     serde_json::to_string(&result).unwrap()
 }
 
-// グローバルな会話履歴（ユーザーIDごと）
 static CONVERSATIONS: Lazy<Mutex<HashMap<u64, Vec<Message>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
@@ -50,58 +51,58 @@ impl EventHandler for Handler {
                 println!("Error sending message: {why:?}");
             }
         } else if msg_content == "spotify" {
-            // let access_token = match spotify::api::token::post().await {
-            //     Ok(token) => token,
-            //     Err(e) => {
-            //         eprintln!("{:?}", e);
-            //         return;
-            //     }
-            // };
+            let access_token = match spotify::api::token::post().await {
+                Ok(token) => token,
+                Err(e) => {
+                    eprintln!("{:?}", e);
+                    return;
+                }
+            };
 
-            // let artists = match spotify::v1::me::following::get(&access_token).await {
-            //     Ok(artists) => artists,
-            //     Err(e) => {
-            //         eprintln!("{:?}", e);
-            //         return;
-            //     }
-            // };
-            // let artist_id = match { artists.choose(&mut thread_rng()) } {
-            //     Some(artist) => &artist.id,
-            //     None => {
-            //         if let Err(why) = msg
-            //             .channel_id
-            //             .say(&ctx.http, "アーティストが見つかりません")
-            //             .await
-            //         {
-            //             println!("Error sending message: {why:?}");
-            //         }
-            //         return;
-            //     }
-            // };
+            let artists = match spotify::v1::me::following::get(&access_token).await {
+                Ok(artists) => artists,
+                Err(e) => {
+                    eprintln!("{:?}", e);
+                    return;
+                }
+            };
+            let artist_id = match { artists.choose(&mut rng()) } {
+                Some(artist) => &artist.id,
+                None => {
+                    if let Err(why) = msg
+                        .channel_id
+                        .say(&ctx.http, "アーティストが見つかりません")
+                        .await
+                    {
+                        println!("Error sending message: {why:?}");
+                    }
+                    return;
+                }
+            };
 
-            // let tracks = match spotify::v1::artists::top_tracks::get(artist_id, &access_token).await
-            // {
-            //     Ok(tracks) => tracks,
-            //     Err(e) => {
-            //         eprintln!("{:?}", e);
-            //         return;
-            //     }
-            // };
-            // let track_url = match { tracks.choose(&mut thread_rng()) } {
-            //     Some(track) => &track.external_urls.spotify,
-            //     None => {
-            //         if let Err(why) = msg.channel_id.say(&ctx.http, "曲が見つかりません").await
-            //         {
-            //             println!("Error sending message: {why:?}");
-            //         }
+            let tracks = match spotify::v1::artists::top_tracks::get(artist_id, &access_token).await
+            {
+                Ok(tracks) => tracks,
+                Err(e) => {
+                    eprintln!("{:?}", e);
+                    return;
+                }
+            };
+            let track_url = match { tracks.choose(&mut rng()) } {
+                Some(track) => &track.external_urls.spotify,
+                None => {
+                    if let Err(why) = msg.channel_id.say(&ctx.http, "曲が見つかりません").await
+                    {
+                        println!("Error sending message: {why:?}");
+                    }
 
-            //         return;
-            //     }
-            // };
+                    return;
+                }
+            };
 
-            // if let Err(why) = msg.channel_id.say(&ctx.http, track_url).await {
-            //     println!("Error sending message: {why:?}");
-            // }
+            if let Err(why) = msg.channel_id.say(&ctx.http, track_url).await {
+                println!("Error sending message: {why:?}");
+            }
         } else {
             #[derive(Debug, Deserialize)]
             struct McpConfig {
@@ -210,20 +211,19 @@ impl EventHandler for Handler {
                 InMemoryVectorStore::from_documents_with_id_f(embeddings, |f| f.name.clone());
             let index = store.index(embedding_model);
             let claude = client
-                .agent(CLAUDE_3_7_SONNET)
+                .agent(GEMINI_2_0_FLASH)
                 .max_tokens(25000)
                 .preamble(
                     "あなたは音楽検索エージェントです。
                     次のことを考慮してください:
                         1. 会話の履歴に基づいて応答してください。
                         2. ユーザーの質問に答えるために、ツールを使用してください。
-                        4. ツールから取得してきた情報を表示して会話を終えることを禁止します、ユーザーに次のアクションを促してください。
+                        3. ツールの結果をそのままユーザーに返さないでください。
                 ",
                 )
                 .dynamic_tools(20, index, tools)
                 .build();
 
-            // ストリーミング応答に変更
             let mut response_stream = claude
                 .stream_chat(&msg_content, history.to_vec())
                 .await
@@ -236,15 +236,12 @@ impl EventHandler for Handler {
             };
             history.push(user_message);
 
-            // Discordにストリーミングで送信
             let mut assistant_text = String::new();
             let mut sent_message: Option<serenity::model::channel::Message> = None;
             while let Some(chunk) = response_stream.next().await {
-                // StreamExtトレイトのnextメソッドを直接使用
                 match chunk {
                     Ok(rig::streaming::StreamingChoice::Message(text)) => {
                         assistant_text.push_str(&text);
-                        // 1回目は新規送信、それ以降は編集
                         if let Some(ref mut msg_obj) = sent_message {
                             let builder = EditMessage::new().content(&assistant_text);
                             let _ = msg_obj.edit(&ctx.http, builder).await;
@@ -259,7 +256,6 @@ impl EventHandler for Handler {
                         }
                     }
                     Ok(rig::streaming::StreamingChoice::ToolCall(name, _, param)) => {
-                        // ツールコールの通知をより視覚的にわかりやすく改善
                         let _ = msg
                             .channel_id
                             .say(
@@ -271,7 +267,6 @@ impl EventHandler for Handler {
                             )
                             .await;
 
-                        // ツール結果も表示する
                         if let Ok(tool_result) = claude.tools.call(&name, param.to_string()).await {
                             let _ = msg
                                 .channel_id
@@ -281,7 +276,6 @@ impl EventHandler for Handler {
                                 )
                                 .await;
 
-                            // 後続の応答にツール結果を含める
                             assistant_text.push_str(&format!(
                                 "\n\n【ツール `{}` の結果】\n{}",
                                 name, tool_result
@@ -297,7 +291,6 @@ impl EventHandler for Handler {
                     }
                 }
             }
-            // assistant_textを履歴に追加
             let assistant_content = AssistantContent::Text(Text {
                 text: assistant_text.clone(),
             });
