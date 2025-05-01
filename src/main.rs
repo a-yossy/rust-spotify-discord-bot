@@ -316,7 +316,8 @@ fn strip_mentions_msg_content(msg: &SerenityMessage) -> String {
 async fn main() {
     dotenvy::dotenv().ok();
 
-    let mut client = discord::get_client(Handler).await;
+    let framework = discord::framework::get();
+    let mut client = discord::client::get(Handler, framework).await;
     if let Err(why) = client.start().await {
         println!("Client error: {why:?}");
     }
