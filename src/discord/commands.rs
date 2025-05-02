@@ -20,7 +20,7 @@ impl Commands {
     }
 
     #[poise::command(slash_command)]
-    pub async fn ss(ctx: Context<'_>, prompt: String) -> Result<(), Error> {
-        ss::handle(ctx, prompt).await
+    pub async fn ss(ctx: Context<'_>) -> Result<(), Error> {
+        ss::handle(ctx).await
     }
 }

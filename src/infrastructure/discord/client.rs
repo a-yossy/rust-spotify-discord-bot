@@ -10,7 +10,7 @@ pub async fn get<H: EventHandler + 'static, F: Framework + 'static>(
     framework: F,
 ) -> Client {
     let token = env::var("DISCORD_TOKEN").expect("DISCORD_TOKENの取得でエラーが発生しました");
-    let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
+    let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT | GatewayIntents::GUILDS;
 
     Client::builder(&token, intents)
         .event_handler(handler)
