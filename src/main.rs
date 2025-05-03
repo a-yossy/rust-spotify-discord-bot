@@ -1,26 +1,7 @@
-use once_cell::sync::Lazy;
-use rig::OneOrMany;
-use rig::message::{AssistantContent, Message, Text, UserContent};
-use rig::providers::gemini::completion::GEMINI_2_0_FLASH;
-use serenity::all::EditMessage;
-use ss_discord_bot::infrastructure::{discord, llm};
-use std::clone;
-use std::collections::HashMap;
-use tokio::sync::Mutex;
-
-use futures::StreamExt;
-use rig::embeddings::EmbeddingsBuilder;
-use rig::providers::{anthropic, cohere};
-use rig::streaming::StreamingChat;
-use rig::tool::{ToolDyn as RigTool, ToolEmbeddingDyn, ToolSet};
-use rig::vector_store::in_memory_store::InMemoryVectorStore;
-use rmcp::ServiceExt;
-use rmcp::model::{CallToolRequestParam, CallToolResult, Tool as McpTool};
-use rmcp::service::ServerSink;
-use serde::Deserialize;
 use serenity::async_trait;
 use serenity::model::channel::Message as SerenityMessage;
 use serenity::prelude::*;
+use ss_discord_bot::infrastructure::discord;
 
 // pub fn convert_mcp_call_tool_result_to_string(result: CallToolResult) -> String {
 //     serde_json::to_string(&result).unwrap()
@@ -31,44 +12,6 @@ struct Handler;
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: SerenityMessage) {
-        let thread = msg
-            .channel(&ctx.http)
-            .await
-            .ok()
-            .unwrap()
-            .id()
-            .get_thread_members(&ctx.http)
-            .await;
-        println!("{:?}", thread);
-        let is_in_thread = msg.thread.is_some()
-            || msg
-                .channel(&ctx.http)
-                .await
-                .ok()
-                .and_then(|ch| match ch {
-                    serenity::model::channel::Channel::Guild(guild_channel) => Some(
-                        guild_channel.kind == serenity::model::channel::ChannelType::PublicThread
-                            || guild_channel.kind
-                                == serenity::model::channel::ChannelType::PrivateThread
-                            || guild_channel.kind
-                                == serenity::model::channel::ChannelType::NewsThread,
-                    ),
-                    _ => None,
-                })
-                .unwrap_or(false);
-        if !is_in_thread {
-            return;
-        }
-
-        let bot_id = ctx.cache.current_user().id;
-        println!("{:?}", bot_id);
-        // let is_bot_in_thread = if let Some(thread) = &msg.thread {
-        //     thread.members(cache)
-        // }
-        return;
-
-        // let msg_content = strip_mentions_msg_content(&msg);
-        msg.channel_id.say(ctx.http, "こんにちは").await.unwrap();
         // #[derive(Debug, Deserialize)]
         // struct McpConfig {
         //     name: String,
@@ -168,74 +111,6 @@ impl EventHandler for Handler {
         //     .unwrap();
         // let store = InMemoryVectorStore::from_documents_with_id_f(embeddings, |f| f.name.clone());
         // let index = store.index(embedding_model);
-
-        // static CONVERSATIONS: Lazy<Mutex<HashMap<u64, Vec<Message>>>> =
-        //     Lazy::new(|| Mutex::new(HashMap::new()));
-
-        // let mut conversations = CONVERSATIONS.lock().await;
-        // let history = conversations.entry(0).or_insert_with(Vec::new);
-
-        // let llm_agent = &ctx.data().llm_agent;
-
-        // let mut response_stream = llm_agent.stream_chat(&prompt, history.to_vec()).await?;
-        // let user_contest = UserContent::Text(Text { text: prompt });
-        // let user_message = Message::User {
-        //     content: OneOrMany::one(user_contest),
-        // };
-        // history.push(user_message);
-
-        // let mut assistant_text = String::new();
-        // let mut sent_message: Option<serenity::all::Message> = None;
-        // while let Some(chunk) = response_stream.next().await {
-        //     match chunk? {
-        //         rig::streaming::StreamingChoice::Message(text) => {
-        //             assistant_text.push_str(&text);
-        //             if let Some(ref mut msg_obj) = sent_message {
-        //                 let builder = EditMessage::new().content(&assistant_text);
-        //                 msg_obj.edit(ctx, builder).await?;
-        //             } else {
-        //                 let message = thread.id.say(ctx.http(), &assistant_text).await?;
-        //                 sent_message = Some(message);
-        //             }
-        //         }
-        //         rig::streaming::StreamingChoice::ToolCall(..) => {
-        //             todo!()
-        //         } // Ok(rig::streaming::StreamingChoice::ToolCall(name, _, param)) => {
-        //           //     let _ = msg
-        //           //         .channel_id
-        //           //         .say(
-        //           //             &ctx.http,
-        //           //             format!(
-        //           //                 "🛠️ **ツール呼び出し**: `{}` \n```json\n{}\n```",
-        //           //                 name, param
-        //           //             ),
-        //           //         )
-        //           //         .await;
-
-        //           //     if let Ok(tool_result) = claude.tools.call(&name, param.to_string()).await {
-        //           //         let _ = msg
-        //           //             .channel_id
-        //           //             .say(
-        //           //                 &ctx.http,
-        //           //                 format!("🔍 **ツール結果**:\n```json\n{}\n```", tool_result),
-        //           //             )
-        //           //             .await;
-
-        //           //         assistant_text.push_str(&format!(
-        //           //             "\n\n【ツール `{}` の結果】\n{}",
-        //           //             name, tool_result
-        //           //         ));
-        //           //     }
-        //           // }
-        //     }
-        // }
-        // let assistant_content = AssistantContent::Text(Text {
-        //     text: assistant_text,
-        // });
-        // let assistant_message = Message::Assistant {
-        //     content: OneOrMany::one(assistant_content),
-        // };
-        // history.push(assistant_message);
     }
 }
 
@@ -244,7 +119,7 @@ async fn main() {
     dotenvy::dotenv().ok();
 
     let framework = discord::framework::get();
-    let mut client = discord::client::get(Handler, framework).await;
+    let mut client = discord::client::get(framework).await;
     if let Err(why) = client.start().await {
         println!("Client error: {why:?}");
     }
