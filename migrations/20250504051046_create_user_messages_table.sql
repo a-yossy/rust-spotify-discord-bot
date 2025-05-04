@@ -1,0 +1,12 @@
+CREATE TABLE
+  user_messages (
+    id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+    thread_id BIGINT UNSIGNED NOT NULL,
+    message_id BIGINT UNSIGNED NOT NULL,
+    user_id BIGINT UNSIGNED NOT NULL,
+    content TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_user_messages_thread_id FOREIGN KEY (thread_id) REFERENCES threads (id),
+    CONSTRAINT uk_user_messages_message_id UNIQUE (message_id)
+  );

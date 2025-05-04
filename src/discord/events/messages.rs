@@ -124,7 +124,7 @@ fn is_thread(thread: &Channel) -> bool {
 }
 
 fn is_bot_in_thread(bot_id: &UserId, thread_members: &[ThreadMember]) -> bool {
-    !thread_members
+    thread_members
         .iter()
         .any(|thread_member| thread_member.user_id == *bot_id)
 }
