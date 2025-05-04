@@ -57,4 +57,24 @@ impl Thread {
 
         Ok(thread)
     }
+
+    pub async fn find_by_channel_id(db_pool: &MySqlPool, channel_id: u64) -> Result<Option<Self>> {
+        let thread = sqlx::query_as!(
+            Self,
+            r#"
+                SELECT
+                    id, guild_id, channel_id, created_at
+                FROM
+                    threads
+                WHERE
+                    channel_id = ?
+                LIMIT 1
+            "#,
+            channel_id
+        )
+        .fetch_optional(db_pool)
+        .await?;
+
+        Ok(thread)
+    }
 }
