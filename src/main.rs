@@ -1,7 +1,8 @@
+use anyhow::Result;
 use serenity::async_trait;
 use serenity::model::channel::Message as SerenityMessage;
 use serenity::prelude::*;
-use ss_discord_bot::infrastructure::discord;
+use ss_discord_bot::infrastructure::{database, discord, llm};
 
 // pub fn convert_mcp_call_tool_result_to_string(result: CallToolResult) -> String {
 //     serde_json::to_string(&result).unwrap()
@@ -115,12 +116,14 @@ impl EventHandler for Handler {
 }
 
 #[tokio::main]
-async fn main() {
-    dotenvy::dotenv().ok();
+async fn main() -> Result<()> {
+    dotenvy::dotenv()?;
 
-    let framework = discord::framework::get();
+    let llm_agent = llm::client::get();
+    let db_pool = database::pool::get().await?;
+    let framework = discord::framework::get(llm_agent, db_pool);
     let mut client = discord::client::get(framework).await;
-    if let Err(why) = client.start().await {
-        println!("Client error: {why:?}");
-    }
+    client.start().await?;
+
+    Ok(())
 }

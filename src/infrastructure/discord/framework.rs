@@ -1,12 +1,13 @@
 use poise::Framework;
+use rig::{agent::Agent, providers::gemini::completion::CompletionModel};
+use sqlx::MySqlPool;
 
 use crate::{
     discord::{commands::Commands, events::Events},
-    infrastructure::llm,
     types::discord::framework::{Data, Error},
 };
 
-pub fn get() -> Framework<Data, Error> {
+pub fn get(llm_agent: Agent<CompletionModel>, db_pool: MySqlPool) -> Framework<Data, Error> {
     let options = poise::FrameworkOptions {
         commands: vec![
             Commands::ping(),
@@ -18,14 +19,13 @@ pub fn get() -> Framework<Data, Error> {
         },
         ..Default::default()
     };
-    let llm_agent = llm::client::get();
 
     poise::Framework::builder()
         .options(options)
         .setup(|ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                Ok(Data::new(llm_agent))
+                Ok(Data::new(llm_agent, db_pool))
             })
         })
         .build()
