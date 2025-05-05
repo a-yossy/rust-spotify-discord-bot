@@ -24,6 +24,21 @@ impl InsertInput {
     }
 }
 
+#[derive(sqlx::Type, Debug)]
+#[sqlx(rename_all = "lowercase")]
+enum MessageSender {
+    User,
+    Agent,
+}
+
+#[derive(Debug)]
+pub struct Message {
+    pub id: u64,
+    pub sender: MessageSender,
+    pub content: String,
+    pub created_at: NaiveDateTime,
+}
+
 impl Thread {
     pub async fn insert(db_pool: &MySqlPool, input: &InsertInput) -> Result<Self> {
         let last_insert_id = sqlx::query!(
@@ -76,5 +91,36 @@ impl Thread {
         .await?;
 
         Ok(thread)
+    }
+
+    pub async fn find_messages_by_thread_id(
+        db_pool: &MySqlPool,
+        thread_id: u64,
+    ) -> Result<Vec<Message>> {
+        let messages = sqlx::query_as!(
+            Message,
+            r#"
+                SELECT
+                    id, 'user' as "sender: MessageSender", content, created_at
+                FROM
+                    user_messages
+                WHERE
+                    thread_id = ?
+                UNION ALL
+                    SELECT
+                        agent_messages.id, 'agent' as "sender: MessageSender", agent_messages.content, agent_messages.created_at
+                    FROM
+                        agent_messages
+                    JOIN
+                        user_messages ON agent_messages.user_message_id = user_messages.id
+                ORDER BY
+                    created_at ASC
+            "#,
+            thread_id
+        )
+        .fetch_all(db_pool)
+        .await?;
+
+        Ok(messages)
     }
 }
