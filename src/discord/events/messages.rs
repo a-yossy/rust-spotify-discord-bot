@@ -1,11 +1,10 @@
 use crate::model::agent_message::{self, AgentMessage};
-use crate::model::thread::{MessageSender, Thread};
+use crate::model::thread::Thread;
 use crate::model::user_message::{self, UserMessage};
 use crate::types::discord::framework::{Data, Error};
 use futures::StreamExt;
 use poise::FrameworkContext;
-use rig::OneOrMany;
-use rig::message::{AssistantContent, Message as RigMessage, Text, UserContent};
+use rig::message::Message as RigMessage;
 use rig::streaming::StreamingChat;
 use serenity::all::{Channel, EditMessage, ThreadMember};
 use serenity::all::{FullEvent, UserId};
@@ -23,17 +22,17 @@ impl Messages {
         new_message: &serenity::all::Message,
     ) -> Result<(), Error> {
         let bot_id = framework.bot_id;
-        if is_message_from_bot(&bot_id, new_message) {
+        if Self::is_message_from_bot(&bot_id, new_message) {
             return Ok(());
         }
 
         let channel = new_message.channel(&ctx.http).await?;
-        if !is_thread(&channel) {
+        if !Self::is_thread(&channel) {
             return Ok(());
         }
 
         let thread_members = channel.id().get_thread_members(&ctx.http).await?;
-        if !is_bot_in_thread(&bot_id, &thread_members) {
+        if !Self::is_bot_in_thread(&bot_id, &thread_members) {
             return Ok(());
         }
 
@@ -47,7 +46,7 @@ impl Messages {
         };
 
         let llm_agent = &data.llm_agent;
-        let chat_history = get_chat_history(db_pool, thread.id).await?;
+        let chat_history = Self::get_chat_history(db_pool, thread.id).await?;
         let mut response_stream = llm_agent
             .stream_chat(&new_message.content, chat_history)
             .await?;
@@ -108,43 +107,35 @@ impl Messages {
 
         Ok(())
     }
-}
 
-fn is_message_from_bot(bot_id: &UserId, new_message: &serenity::all::Message) -> bool {
-    *bot_id == new_message.author.id
-}
+    fn is_message_from_bot(bot_id: &UserId, new_message: &serenity::all::Message) -> bool {
+        *bot_id == new_message.author.id
+    }
 
-fn is_thread(thread: &Channel) -> bool {
-    matches!(thread,
-        serenity::model::channel::Channel::Guild(guild_channel) if matches!(guild_channel.kind,
-            serenity::model::channel::ChannelType::PublicThread |
-            serenity::model::channel::ChannelType::PrivateThread |
-            serenity::model::channel::ChannelType::NewsThread
+    fn is_thread(thread: &Channel) -> bool {
+        matches!(thread,
+            serenity::model::channel::Channel::Guild(guild_channel) if matches!(guild_channel.kind,
+                serenity::model::channel::ChannelType::PublicThread |
+                serenity::model::channel::ChannelType::PrivateThread |
+                serenity::model::channel::ChannelType::NewsThread
+            )
         )
-    )
-}
+    }
 
-fn is_bot_in_thread(bot_id: &UserId, thread_members: &[ThreadMember]) -> bool {
-    thread_members
-        .iter()
-        .any(|thread_member| thread_member.user_id == *bot_id)
-}
+    fn is_bot_in_thread(bot_id: &UserId, thread_members: &[ThreadMember]) -> bool {
+        thread_members
+            .iter()
+            .any(|thread_member| thread_member.user_id == *bot_id)
+    }
 
-async fn get_chat_history(db_pool: &MySqlPool, thread_id: u64) -> Result<Vec<RigMessage>, Error> {
-    Ok(Thread::find_messages_by_thread_id(db_pool, thread_id)
-        .await?
-        .into_iter()
-        .map(|message| match message.sender {
-            MessageSender::Agent => RigMessage::Assistant {
-                content: OneOrMany::one(AssistantContent::Text(Text {
-                    text: message.content,
-                })),
-            },
-            MessageSender::User => RigMessage::User {
-                content: OneOrMany::one(UserContent::Text(Text {
-                    text: message.content.clone(),
-                })),
-            },
-        })
-        .collect())
+    async fn get_chat_history(
+        db_pool: &MySqlPool,
+        thread_id: u64,
+    ) -> Result<Vec<RigMessage>, Error> {
+        Ok(Thread::find_messages_by_thread_id(db_pool, thread_id)
+            .await?
+            .into_iter()
+            .map(RigMessage::from)
+            .collect())
+    }
 }

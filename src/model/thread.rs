@@ -1,5 +1,7 @@
 use anyhow::Result;
 use chrono::NaiveDateTime;
+use rig::OneOrMany;
+use rig::message::{AssistantContent, Message as RigMessage, Text, UserContent};
 use sqlx::MySqlPool;
 
 #[derive(Debug)]
@@ -36,6 +38,23 @@ pub struct Message {
     pub sender: MessageSender,
     pub content: String,
     pub created_at: NaiveDateTime,
+}
+
+impl From<Message> for RigMessage {
+    fn from(message: Message) -> Self {
+        match message.sender {
+            MessageSender::Agent => RigMessage::Assistant {
+                content: OneOrMany::one(AssistantContent::Text(Text {
+                    text: message.content,
+                })),
+            },
+            MessageSender::User => RigMessage::User {
+                content: OneOrMany::one(UserContent::Text(Text {
+                    text: message.content.clone(),
+                })),
+            },
+        }
+    }
 }
 
 impl Thread {
