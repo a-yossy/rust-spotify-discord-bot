@@ -52,15 +52,15 @@ impl Messages {
             .stream_chat(&new_message.content, chat_history)
             .await?;
 
-        let mut assistant_text = String::new();
-        let mut assistant_message = channel.id().say(ctx.http(), "生成中...").await?;
+        let mut agent_text = String::new();
+        let mut agent_message = channel.id().say(ctx.http(), "生成中...").await?;
         while let Some(chunk) = response_stream.next().await {
             match chunk? {
                 rig::streaming::StreamingChoice::Message(text) => {
-                    if assistant_text.len() + text.len() < 4000 {
-                        assistant_text.push_str(&text);
-                        let builder = EditMessage::new().content(&assistant_text);
-                        assistant_message.edit(ctx, builder).await?;
+                    if agent_text.len() + text.len() < 4000 {
+                        agent_text.push_str(&text);
+                        let builder = EditMessage::new().content(&agent_text);
+                        agent_message.edit(ctx, builder).await?;
                     }
                 }
                 rig::streaming::StreamingChoice::ToolCall(..) => {
@@ -102,11 +102,8 @@ impl Messages {
             new_message.content.clone(),
         );
         let user_message = UserMessage::insert(db_pool, &user_message_input).await?;
-        let agent_message_input = agent_message::InsertInput::new(
-            user_message.id,
-            assistant_message.id.get(),
-            assistant_text,
-        );
+        let agent_message_input =
+            agent_message::InsertInput::new(user_message.id, agent_message.id.get(), agent_text);
         AgentMessage::insert(db_pool, &agent_message_input).await?;
 
         Ok(())
