@@ -26,14 +26,13 @@ impl InsertInput {
 
 #[derive(sqlx::Type, Debug)]
 #[sqlx(rename_all = "lowercase")]
-enum MessageSender {
+pub enum MessageSender {
     User,
     Agent,
 }
 
 #[derive(Debug)]
 pub struct Message {
-    pub id: u64,
     pub sender: MessageSender,
     pub content: String,
     pub created_at: NaiveDateTime,
@@ -101,14 +100,14 @@ impl Thread {
             Message,
             r#"
                 SELECT
-                    id, 'user' as "sender: MessageSender", content, created_at
+                    'user' as "sender: MessageSender", content, created_at
                 FROM
                     user_messages
                 WHERE
                     thread_id = ?
                 UNION ALL
                     SELECT
-                        agent_messages.id, 'agent' as "sender: MessageSender", agent_messages.content, agent_messages.created_at
+                        'agent' as "sender: MessageSender", agent_messages.content, agent_messages.created_at
                     FROM
                         agent_messages
                     JOIN

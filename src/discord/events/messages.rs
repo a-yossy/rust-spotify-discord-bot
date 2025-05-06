@@ -1,5 +1,8 @@
+use crate::model::agent_message::{self, AgentMessage};
+use crate::model::thread::{MessageSender, Thread};
+use crate::model::user_message::{self, UserMessage};
+use crate::types::discord::framework::{Data, Error};
 use futures::StreamExt;
-use once_cell::sync::Lazy;
 use poise::FrameworkContext;
 use rig::OneOrMany;
 use rig::message::{AssistantContent, Message as RigMessage, Text, UserContent};
@@ -7,16 +10,7 @@ use rig::streaming::StreamingChat;
 use serenity::all::{Channel, EditMessage, ThreadMember};
 use serenity::all::{FullEvent, UserId};
 use serenity::prelude::*;
-use std::collections::HashMap;
-use tokio::sync::Mutex;
-
-use crate::model::agent_message::{self, AgentMessage};
-use crate::model::thread::Thread;
-use crate::model::user_message::{self, UserMessage};
-use crate::types::discord::framework::{Data, Error};
-
-static CONVERSATIONS: Lazy<Mutex<HashMap<u64, Vec<RigMessage>>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+use sqlx::MySqlPool;
 
 pub struct Messages;
 
@@ -52,27 +46,21 @@ impl Messages {
             }
         };
 
-        let mut conversations = CONVERSATIONS.lock().await;
-        let history = conversations.entry(0).or_insert_with(Vec::new);
-
         let llm_agent = &data.llm_agent;
-
+        let chat_history = get_chat_history(db_pool, thread.id).await?;
         let mut response_stream = llm_agent
-            .stream_chat(&new_message.content, history.to_vec())
+            .stream_chat(&new_message.content, chat_history)
             .await?;
 
         let mut assistant_text = String::new();
-        let mut sent_message: Option<serenity::all::Message> = None;
+        let mut assistant_message = channel.id().say(ctx.http(), "生成中...").await?;
         while let Some(chunk) = response_stream.next().await {
             match chunk? {
                 rig::streaming::StreamingChoice::Message(text) => {
-                    assistant_text.push_str(&text);
-                    if let Some(ref mut msg_obj) = sent_message {
+                    if assistant_text.len() + text.len() < 4000 {
+                        assistant_text.push_str(&text);
                         let builder = EditMessage::new().content(&assistant_text);
-                        msg_obj.edit(ctx, builder).await?;
-                    } else {
-                        let message = channel.id().say(ctx.http(), &assistant_text).await?;
-                        sent_message = Some(message);
+                        assistant_message.edit(ctx, builder).await?;
                     }
                 }
                 rig::streaming::StreamingChoice::ToolCall(..) => {
@@ -107,21 +95,6 @@ impl Messages {
             }
         }
 
-        let user_contest = UserContent::Text(Text {
-            text: new_message.content.clone(),
-        });
-        let user_message = RigMessage::User {
-            content: OneOrMany::one(user_contest),
-        };
-        history.push(user_message);
-        let assistant_content = AssistantContent::Text(Text {
-            text: assistant_text.clone(),
-        });
-        let assistant_message = RigMessage::Assistant {
-            content: OneOrMany::one(assistant_content),
-        };
-        history.push(assistant_message);
-
         let user_message_input = user_message::InsertInput::new(
             thread.id,
             new_message.id.get(),
@@ -129,7 +102,11 @@ impl Messages {
             new_message.content.clone(),
         );
         let user_message = UserMessage::insert(db_pool, &user_message_input).await?;
-        let agent_message_input = agent_message::InsertInput::new(user_message.id, assistant_text);
+        let agent_message_input = agent_message::InsertInput::new(
+            user_message.id,
+            assistant_message.id.get(),
+            assistant_text,
+        );
         AgentMessage::insert(db_pool, &agent_message_input).await?;
 
         Ok(())
@@ -154,4 +131,23 @@ fn is_bot_in_thread(bot_id: &UserId, thread_members: &[ThreadMember]) -> bool {
     thread_members
         .iter()
         .any(|thread_member| thread_member.user_id == *bot_id)
+}
+
+async fn get_chat_history(db_pool: &MySqlPool, thread_id: u64) -> Result<Vec<RigMessage>, Error> {
+    Ok(Thread::find_messages_by_thread_id(db_pool, thread_id)
+        .await?
+        .into_iter()
+        .map(|message| match message.sender {
+            MessageSender::Agent => RigMessage::Assistant {
+                content: OneOrMany::one(AssistantContent::Text(Text {
+                    text: message.content,
+                })),
+            },
+            MessageSender::User => RigMessage::User {
+                content: OneOrMany::one(UserContent::Text(Text {
+                    text: message.content.clone(),
+                })),
+            },
+        })
+        .collect())
 }

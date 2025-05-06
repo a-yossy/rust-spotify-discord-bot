@@ -2615,7 +2615,6 @@ dependencies = [
  "chrono",
  "dotenvy",
  "futures",
- "once_cell",
  "poise",
  "rand 0.9.0",
  "reqwest 0.12.15",

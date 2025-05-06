@@ -5,6 +5,7 @@ use sqlx::MySqlPool;
 #[derive(Debug)]
 pub struct AgentMessage {
     pub id: u64,
+    pub message_id: u64,
     pub user_message_id: u64,
     pub content: String,
     pub created_at: NaiveDateTime,
@@ -14,13 +15,15 @@ pub struct AgentMessage {
 #[derive(Debug)]
 pub struct InsertInput {
     pub user_message_id: u64,
+    pub message_id: u64,
     pub content: String,
 }
 
 impl InsertInput {
-    pub fn new(user_message_id: u64, content: String) -> Self {
+    pub fn new(user_message_id: u64, message_id: u64, content: String) -> Self {
         Self {
             user_message_id,
+            message_id,
             content,
         }
     }
@@ -31,11 +34,12 @@ impl AgentMessage {
         let last_insert_id = sqlx::query!(
             r#"
                 INSERT INTO
-                    agent_messages (user_message_id, content)
+                    agent_messages (user_message_id, message_id, content)
                 VALUES
-                    (?, ?)
+                    (?, ?, ?)
             "#,
             input.user_message_id,
+            input.message_id,
             input.content
         )
         .execute(db_pool)
@@ -46,7 +50,7 @@ impl AgentMessage {
             Self,
             r#"
                 SELECT
-                    id, user_message_id, content, created_at, updated_at
+                    id, message_id, user_message_id, content, created_at, updated_at
                 FROM
                     agent_messages
                 WHERE
