@@ -1,6 +1,6 @@
 use anyhow::Result;
 use chrono::NaiveDateTime;
-use sqlx::MySqlPool;
+use sqlx::{MySql, Transaction};
 
 #[derive(Debug)]
 pub struct AgentMessage {
@@ -13,14 +13,14 @@ pub struct AgentMessage {
 }
 
 #[derive(Debug)]
-pub struct InsertInput {
+pub struct InsertInput<'a> {
     pub user_message_id: u64,
     pub message_id: u64,
-    pub content: String,
+    pub content: &'a str,
 }
 
-impl InsertInput {
-    pub fn new(user_message_id: u64, message_id: u64, content: String) -> Self {
+impl<'a> InsertInput<'a> {
+    pub fn new(user_message_id: u64, message_id: u64, content: &'a str) -> Self {
         Self {
             user_message_id,
             message_id,
@@ -30,7 +30,7 @@ impl InsertInput {
 }
 
 impl AgentMessage {
-    pub async fn insert(db_pool: &MySqlPool, input: &InsertInput) -> Result<Self> {
+    pub async fn insert(tx: &mut Transaction<'_, MySql>, input: &InsertInput<'_>) -> Result<Self> {
         let last_insert_id = sqlx::query!(
             r#"
                 INSERT INTO
@@ -42,7 +42,7 @@ impl AgentMessage {
             input.message_id,
             input.content
         )
-        .execute(db_pool)
+        .execute(&mut **tx)
         .await?
         .last_insert_id();
 
@@ -58,7 +58,7 @@ impl AgentMessage {
             "#,
             last_insert_id
         )
-        .fetch_one(db_pool)
+        .fetch_one(&mut **tx)
         .await?;
 
         Ok(agent_message)

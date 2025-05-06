@@ -1,7 +1,8 @@
 use anyhow::Result;
 use chrono::NaiveDateTime;
-use sqlx::MySqlPool;
+use sqlx::{MySql, Transaction};
 
+#[derive(Debug)]
 pub struct UserMessage {
     pub id: u64,
     pub thread_id: u64,
@@ -12,15 +13,16 @@ pub struct UserMessage {
     pub updated_at: NaiveDateTime,
 }
 
-pub struct InsertInput {
+#[derive(Debug)]
+pub struct InsertInput<'a> {
     pub thread_id: u64,
     pub message_id: u64,
     pub user_id: u64,
-    pub content: String,
+    pub content: &'a str,
 }
 
-impl InsertInput {
-    pub fn new(thread_id: u64, message_id: u64, user_id: u64, content: String) -> Self {
+impl<'a> InsertInput<'a> {
+    pub fn new(thread_id: u64, message_id: u64, user_id: u64, content: &'a str) -> Self {
         Self {
             thread_id,
             message_id,
@@ -31,7 +33,7 @@ impl InsertInput {
 }
 
 impl UserMessage {
-    pub async fn insert(db_pool: &MySqlPool, input: &InsertInput) -> Result<Self> {
+    pub async fn insert(tx: &mut Transaction<'_, MySql>, input: &InsertInput<'_>) -> Result<Self> {
         let last_insert_id = sqlx::query!(
             r#"
                 INSERT INTO
@@ -44,7 +46,7 @@ impl UserMessage {
             input.user_id,
             input.content
         )
-        .execute(db_pool)
+        .execute(&mut **tx)
         .await?
         .last_insert_id();
 
@@ -60,7 +62,7 @@ impl UserMessage {
             "#,
             last_insert_id
         )
-        .fetch_one(db_pool)
+        .fetch_one(&mut **tx)
         .await?;
 
         Ok(user_message)

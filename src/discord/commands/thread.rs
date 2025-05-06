@@ -21,8 +21,11 @@ pub async fn handle(ctx: Context<'_>) -> Result<(), Error> {
         .context("想定外のエラーが発生しました")?
         .get();
     let channel_id = thread.id.get();
+
+    let mut tx = db_pool.begin().await?;
     let input = thread::InsertInput::new(guild_id, channel_id);
-    Thread::insert(db_pool, &input).await?;
+    Thread::insert(&mut tx, &input).await?;
+    tx.commit().await?;
 
     Ok(())
 }

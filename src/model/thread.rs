@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::NaiveDateTime;
 use rig::OneOrMany;
 use rig::message::{AssistantContent, Message as RigMessage, Text, UserContent};
-use sqlx::MySqlPool;
+use sqlx::{MySql, MySqlPool, Transaction};
 
 #[derive(Debug)]
 pub struct Thread {
@@ -12,6 +12,7 @@ pub struct Thread {
     pub created_at: NaiveDateTime,
 }
 
+#[derive(Debug)]
 pub struct InsertInput {
     guild_id: u64,
     channel_id: u64,
@@ -50,7 +51,7 @@ impl From<Message> for RigMessage {
             },
             MessageSender::User => RigMessage::User {
                 content: OneOrMany::one(UserContent::Text(Text {
-                    text: message.content.clone(),
+                    text: message.content,
                 })),
             },
         }
@@ -58,7 +59,7 @@ impl From<Message> for RigMessage {
 }
 
 impl Thread {
-    pub async fn insert(db_pool: &MySqlPool, input: &InsertInput) -> Result<Self> {
+    pub async fn insert(tx: &mut Transaction<'_, MySql>, input: &InsertInput) -> Result<Self> {
         let last_insert_id = sqlx::query!(
             r#"
                 INSERT INTO
@@ -69,7 +70,7 @@ impl Thread {
             input.guild_id,
             input.channel_id
         )
-        .execute(db_pool)
+        .execute(&mut **tx)
         .await?
         .last_insert_id();
 
@@ -85,7 +86,7 @@ impl Thread {
             "#,
             last_insert_id
         )
-        .fetch_one(db_pool)
+        .fetch_one(&mut **tx)
         .await?;
 
         Ok(thread)

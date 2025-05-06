@@ -94,16 +94,18 @@ impl Messages {
             }
         }
 
+        let mut tx = db_pool.begin().await?;
         let user_message_input = user_message::InsertInput::new(
             thread.id,
             new_message.id.get(),
             new_message.author.id.get(),
-            new_message.content.clone(),
+            &new_message.content,
         );
-        let user_message = UserMessage::insert(db_pool, &user_message_input).await?;
+        let user_message = UserMessage::insert(&mut tx, &user_message_input).await?;
         let agent_message_input =
-            agent_message::InsertInput::new(user_message.id, agent_message.id.get(), agent_text);
-        AgentMessage::insert(db_pool, &agent_message_input).await?;
+            agent_message::InsertInput::new(user_message.id, agent_message.id.get(), &agent_text);
+        AgentMessage::insert(&mut tx, &agent_message_input).await?;
+        tx.commit().await?;
 
         Ok(())
     }
