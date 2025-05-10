@@ -62,35 +62,33 @@ impl Messages {
                         agent_message.edit(ctx, builder).await?;
                     }
                 }
-                rig::streaming::StreamingChoice::ToolCall(..) => {
-                    todo!()
-                } // Ok(rig::streaming::StreamingChoice::ToolCall(name, _, param)) => {
-                  //     let _ = msg
-                  //         .channel_id
-                  //         .say(
-                  //             &ctx.http,
-                  //             format!(
-                  //                 "🛠️ **ツール呼び出し**: `{}` \n```json\n{}\n```",
-                  //                 name, param
-                  //             ),
-                  //         )
-                  //         .await;
+                rig::streaming::StreamingChoice::ToolCall(name, _, param) => {
+                    let _ = new_message
+                        .channel_id
+                        .say(
+                            &ctx.http,
+                            format!(
+                                "🛠️ **ツール呼び出し**: `{}` \n```json\n{}\n```",
+                                name, param
+                            ),
+                        )
+                        .await;
 
-                  //     if let Ok(tool_result) = claude.tools.call(&name, param.to_string()).await {
-                  //         let _ = msg
-                  //             .channel_id
-                  //             .say(
-                  //                 &ctx.http,
-                  //                 format!("🔍 **ツール結果**:\n```json\n{}\n```", tool_result),
-                  //             )
-                  //             .await;
+                    if let Ok(tool_result) = llm_agent.tools.call(&name, param.to_string()).await {
+                        let _ = new_message
+                            .channel_id
+                            .say(
+                                &ctx.http,
+                                format!("🔍 **ツール結果**:\n```json\n{}\n```", tool_result),
+                            )
+                            .await;
 
-                  //         assistant_text.push_str(&format!(
-                  //             "\n\n【ツール `{}` の結果】\n{}",
-                  //             name, tool_result
-                  //         ));
-                  //     }
-                  // }
+                        agent_text.push_str(&format!(
+                            "\n\n【ツール `{}` の結果】\n{}",
+                            name, tool_result
+                        ));
+                    }
+                }
             }
         }
 
