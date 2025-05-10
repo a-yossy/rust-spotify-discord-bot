@@ -1,7 +1,8 @@
 use anyhow::Result;
 use ss_discord_bot::infrastructure::{
-    database, discord,
-    llm::{self, embedding::Embedding},
+    database::pool::Pool,
+    discord::{client::Client, framework::Framework},
+    llm::{agent::Agent, embedding::Embedding},
     mcp::{server::Server, toolset::ToolSet},
 };
 
@@ -13,11 +14,10 @@ async fn main() -> Result<()> {
 
     let toolset = ToolSet::get().await?;
     let index = Embedding::build_tool_index(&toolset).await?;
-    let llm_agent = llm::client::get(index, toolset).await;
-    let db_pool = database::pool::get().await?;
-    let framework = discord::framework::get(llm_agent, db_pool);
-    let mut client = discord::client::get(framework).await;
-
+    let agent = Agent::get(index, toolset).await;
+    let db_pool = Pool::get().await?;
+    let framework = Framework::get(agent, db_pool);
+    let mut client = Client::get(framework).await;
     client.start().await?;
 
     Ok(())

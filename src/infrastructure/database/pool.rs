@@ -1,14 +1,18 @@
 use std::env;
 
 use anyhow::Result;
-use sqlx::{MySql, Pool, mysql::MySqlPoolOptions};
+use sqlx::{MySql, Pool as SqlxPool, mysql::MySqlPoolOptions};
 
-pub async fn get() -> Result<Pool<MySql>> {
-    let database_url = env::var("DATABASE_URL")?;
-    let pool = MySqlPoolOptions::new()
-        .max_connections(5)
-        .connect(&database_url)
-        .await?;
+pub struct Pool;
 
-    Ok(pool)
+impl Pool {
+    pub async fn get() -> Result<SqlxPool<MySql>> {
+        let database_url = env::var("DATABASE_URL")?;
+        let pool = MySqlPoolOptions::new()
+            .max_connections(5)
+            .connect(&database_url)
+            .await?;
+
+        Ok(pool)
+    }
 }
