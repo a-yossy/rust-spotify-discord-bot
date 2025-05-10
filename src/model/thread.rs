@@ -132,9 +132,12 @@ impl Thread {
                         agent_messages
                     JOIN
                         user_messages ON agent_messages.user_message_id = user_messages.id
+                    WHERE
+                        user_messages.thread_id = ?
                 ORDER BY
                     created_at ASC
             "#,
+            thread_id,
             thread_id
         )
         .fetch_all(db_pool)
