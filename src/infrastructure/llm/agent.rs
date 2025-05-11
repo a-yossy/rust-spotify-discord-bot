@@ -18,6 +18,13 @@ impl Agent {
         Client::from_env()
             .agent(GEMINI_2_0_FLASH)
             .max_tokens(25000)
+            .preamble(
+                "
+                    使用可能なツールがある場合は、ツールを使用してください。
+                    使用可能なツールがない場合は、ツールを使用せず回答してください。
+                    ツール呼び出しの結果を受け取った場合は、受け取った内容に基づいて回答してください。
+                ",
+            )
             .dynamic_tools(10, index, toolset)
             .build()
     }
