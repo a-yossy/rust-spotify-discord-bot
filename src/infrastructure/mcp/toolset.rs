@@ -6,27 +6,12 @@ use rmcp::{
     service::ServerSink,
     transport::SseTransport,
 };
-use serde::Deserialize;
 
 pub struct ToolSet;
 
 impl ToolSet {
     pub async fn get() -> Result<RigToolSet> {
         let transport = SseTransport::start("http://localhost:8000/sse").await?;
-
-        #[derive(Debug, Deserialize)]
-        struct McpConfig {
-            name: String,
-            protocol: String,
-            command: String,
-            args: Vec<String>,
-        }
-
-        #[derive(Debug, Deserialize)]
-        struct Config {
-            mcp: McpConfig,
-        }
-
         let mcp_manager = ().serve(transport).await?;
         struct McpToolAdaptor {
             tool: McpTool,
