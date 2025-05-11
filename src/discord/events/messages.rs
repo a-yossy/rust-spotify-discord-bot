@@ -44,54 +44,10 @@ impl Messages {
                 return Ok(());
             }
         };
-
         let llm_agent = &data.llm_agent;
-        let chat_history = Self::get_chat_history(db_pool, thread.id).await?;
-        let mut response_stream = llm_agent
-            .stream_chat(&new_message.content, chat_history)
-            .await?;
+        let mut message = new_message.content.clone();
 
-        let mut agent_text = String::new();
-        let mut agent_message = channel.id().say(ctx.http(), "生成中...").await?;
-        while let Some(chunk) = response_stream.next().await {
-            match chunk? {
-                rig::streaming::StreamingChoice::Message(text) => {
-                    if agent_text.len() + text.len() < 4000 {
-                        agent_text.push_str(&text);
-                        let builder = EditMessage::new().content(&agent_text);
-                        agent_message.edit(ctx, builder).await?;
-                    }
-                }
-                rig::streaming::StreamingChoice::ToolCall(name, _, param) => {
-                    let _ = new_message
-                        .channel_id
-                        .say(
-                            &ctx.http,
-                            format!(
-                                "🛠️ **ツール呼び出し**: `{}` \n```json\n{}\n```",
-                                name, param
-                            ),
-                        )
-                        .await;
-
-                    if let Ok(tool_result) = llm_agent.tools.call(&name, param.to_string()).await {
-                        let _ = new_message
-                            .channel_id
-                            .say(
-                                &ctx.http,
-                                format!("🔍 **ツール結果**:\n```json\n{}\n```", tool_result),
-                            )
-                            .await;
-
-                        agent_text.push_str(&format!(
-                            "\n\n【ツール `{}` の結果】\n{}",
-                            name, tool_result
-                        ));
-                    }
-                }
-            }
-        }
-
+        let mut chat_history = Self::get_chat_history(db_pool, thread.id).await?;
         let mut tx = db_pool.begin().await?;
         let user_message_input = user_message::InsertInput::new(
             thread.id,
@@ -100,9 +56,63 @@ impl Messages {
             &new_message.content,
         );
         let user_message = UserMessage::insert(&mut tx, &user_message_input).await?;
-        let agent_message_input =
-            agent_message::InsertInput::new(user_message.id, agent_message.id.get(), &agent_text);
-        AgentMessage::insert(&mut tx, &agent_message_input).await?;
+        chat_history.push(RigMessage::from(user_message.clone()));
+        loop {
+            let mut is_response_complete = false;
+            let mut response_stream = llm_agent
+                .stream_chat(&message, chat_history.clone())
+                .await?;
+
+            let mut agent_text = String::new();
+            let mut agent_message = channel.id().say(ctx.http(), "生成中...").await?;
+            while let Some(chunk) = response_stream.next().await {
+                match chunk? {
+                    rig::streaming::StreamingChoice::Message(text) => {
+                        is_response_complete = true;
+                        if agent_text.len() + text.len() < 4000 {
+                            agent_text.push_str(&text);
+                            let builder = EditMessage::new().content(&agent_text);
+                            agent_message.edit(ctx, builder).await?;
+                        }
+                    }
+                    rig::streaming::StreamingChoice::ToolCall(name, _, param) => {
+                        let mut tool_call = format!(
+                            "🛠️ **ツール呼び出し**: `{}` \n```json\n{}\n```",
+                            name, param
+                        );
+
+                        if let Ok(tool_result) =
+                            llm_agent.tools.call(&name, param.to_string()).await
+                        {
+                            tool_call.push_str(&format!(
+                                "🔍 **ツール結果**:\n```json\n{}\n```",
+                                tool_result
+                            ));
+
+                            agent_text.push_str(&tool_call);
+
+                            let builder = EditMessage::new().content(&agent_text);
+                            agent_message.edit(ctx, builder).await?;
+
+                            message = tool_call
+                        }
+                    }
+                }
+            }
+
+            let agent_message_input = agent_message::InsertInput::new(
+                user_message.id,
+                agent_message.id.get(),
+                &agent_text,
+            );
+            let agent_message = AgentMessage::insert(&mut tx, &agent_message_input).await?;
+
+            chat_history.push(RigMessage::from(agent_message));
+
+            if is_response_complete {
+                break;
+            }
+        }
         tx.commit().await?;
 
         Ok(())
