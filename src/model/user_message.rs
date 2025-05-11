@@ -1,8 +1,12 @@
 use anyhow::Result;
 use chrono::NaiveDateTime;
+use rig::{
+    OneOrMany,
+    message::{Message, Text, UserContent},
+};
 use sqlx::{MySql, Transaction};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UserMessage {
     pub id: u64,
     pub thread_id: u64,
@@ -28,6 +32,16 @@ impl<'a> InsertInput<'a> {
             message_id,
             user_id,
             content,
+        }
+    }
+}
+
+impl From<UserMessage> for Message {
+    fn from(message: UserMessage) -> Self {
+        Message::User {
+            content: OneOrMany::one(UserContent::Text(Text {
+                text: message.content,
+            })),
         }
     }
 }

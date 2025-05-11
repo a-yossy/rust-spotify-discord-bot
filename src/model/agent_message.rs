@@ -1,5 +1,9 @@
 use anyhow::Result;
 use chrono::NaiveDateTime;
+use rig::{
+    OneOrMany,
+    message::{AssistantContent, Message, Text},
+};
 use sqlx::{MySql, Transaction};
 
 #[derive(Debug)]
@@ -25,6 +29,16 @@ impl<'a> InsertInput<'a> {
             user_message_id,
             message_id,
             content,
+        }
+    }
+}
+
+impl From<AgentMessage> for Message {
+    fn from(message: AgentMessage) -> Self {
+        Message::Assistant {
+            content: OneOrMany::one(AssistantContent::Text(Text {
+                text: message.content,
+            })),
         }
     }
 }
