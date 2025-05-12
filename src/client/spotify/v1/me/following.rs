@@ -1,9 +1,12 @@
+pub mod contains;
+
+use crate::constant::spotify::API_BASE_URL;
 use anyhow::Result;
 use reqwest::Client;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
-struct FollowingResponse {
+struct GetResponse {
     artists: Artists,
 }
 
@@ -28,13 +31,14 @@ pub async fn get(access_token: &str) -> Result<Vec<Artist>> {
     let mut after = Some(String::new());
     let client = Client::new();
     while let Some(now_after) = after {
+        let query = [("type", "artist"), ("after", &now_after)];
         let response = client
-            .get("https://api.spotify.com/v1/me/following")
-            .query(&[("type", "artist"), ("after", &now_after)])
+            .get(&format!("{}/v1/me/following", API_BASE_URL))
+            .query(&query)
             .bearer_auth(access_token)
             .send()
             .await?
-            .json::<FollowingResponse>()
+            .json::<GetResponse>()
             .await?;
         after = response.artists.cursors.after;
         response
@@ -45,4 +49,33 @@ pub async fn get(access_token: &str) -> Result<Vec<Artist>> {
     }
 
     Ok(artists)
+}
+
+pub enum PutType {
+    Artist,
+    User,
+}
+
+pub async fn put(access_token: &str, r#type: PutType, ids: &[String]) -> Result<()> {
+    let client = Client::new();
+    let query = &[(
+        "type",
+        match r#type {
+            PutType::Artist => "artist",
+            PutType::User => "user",
+        },
+    )];
+    let body = serde_json::json!({
+        "ids": ids
+    });
+    client
+        .put(&format!("{}/v1/me/following", API_BASE_URL))
+        .bearer_auth(access_token)
+        .header("Content-Type", "application/json")
+        .query(&query)
+        .json(&body)
+        .send()
+        .await?;
+
+    Ok(())
 }

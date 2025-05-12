@@ -6,8 +6,8 @@ use super::Context;
 
 pub async fn handle(ctx: Context<'_>) -> Result<(), Error> {
     ctx.defer().await?;
-    let access_token = spotify::api::token::post().await?;
-    let artists = spotify::v1::me::following::get(&access_token).await?;
+    let response = spotify::api::token::post().await?;
+    let artists = spotify::v1::me::following::get(&response.access_token).await?;
     let artist_id = match { artists.choose(&mut rand::rng()) } {
         Some(artist) => &artist.id,
         None => {
@@ -16,7 +16,7 @@ pub async fn handle(ctx: Context<'_>) -> Result<(), Error> {
             return Ok(());
         }
     };
-    let tracks = spotify::v1::artists::top_tracks::get(&artist_id, &access_token).await?;
+    let tracks = spotify::v1::artists::top_tracks::get(&artist_id, &response.access_token).await?;
     let track_url = match { tracks.choose(&mut rand::rng()) } {
         Some(track) => &track.external_urls.spotify,
         None => {

@@ -1,0 +1,9 @@
+CREATE TABLE
+  music_genres (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT 'ID',
+    name VARCHAR(255) NOT NULL COMMENT 'ジャンル名',
+    search_key VARCHAR(100) NOT NULL COMMENT '検索キー',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '作成日時',
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新日時',
+    UNIQUE KEY uk_music_genres_search_key (search_key)
+  ) COMMENT '音楽ジャンル';

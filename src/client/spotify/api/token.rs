@@ -1,16 +1,15 @@
-use std::env;
-
 use anyhow::Result;
 use base64::prelude::*;
 use reqwest::Client;
 use serde::Deserialize;
+use std::env;
 
 #[derive(Debug, Deserialize)]
-struct TokenResponse {
-    access_token: String,
+pub struct PostResponse {
+    pub access_token: String,
 }
 
-pub async fn post() -> Result<String> {
+pub async fn post() -> Result<PostResponse> {
     let refresh_token = env::var("SPOTIFY_REFRESH_TOKEN")?;
     let params = [
         ("grant_type", "refresh_token"),
@@ -28,7 +27,6 @@ pub async fn post() -> Result<String> {
         .form(&params)
         .send()
         .await?
-        .json::<TokenResponse>()
-        .await?
-        .access_token)
+        .json::<PostResponse>()
+        .await?)
 }
