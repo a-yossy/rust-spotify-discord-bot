@@ -25,7 +25,7 @@ impl Agent {
                     ツール呼び出しの結果を受け取った場合は、受け取った内容に基づいて回答してください。
                 ",
             )
-            .dynamic_tools(10, index, toolset)
+            .dynamic_tools(30, index, toolset)
             .build()
     }
 }

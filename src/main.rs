@@ -10,13 +10,13 @@ use ss_discord_bot::infrastructure::{
 async fn main() -> Result<()> {
     dotenvy::dotenv()?;
 
-    Server::start().await?;
-
+    let db_pool = Pool::get().await?;
+    Server::start(db_pool.clone()).await?;
+    
     let toolset = ToolSet::get().await?;
     let index = Embedding::build_tool_index(&toolset).await?;
     let agent = Agent::get(index, toolset).await;
-    let db_pool = Pool::get().await?;
-    let framework = Framework::get(agent, db_pool);
+    let framework = Framework::get(agent, db_pool.clone());
     let mut client = Client::get(framework).await;
     client.start().await?;
 
